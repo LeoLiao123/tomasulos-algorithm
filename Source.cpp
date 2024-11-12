@@ -3,421 +3,217 @@
 #include<sstream>
 #include<fstream>
 #include<string>
+#include<cmath>
 #include"Inst.h"
 #include"RegisterStatus.h"
 #include"ReservationStation.h"
+
 using namespace std;
-const int ADD_Nums = 3;
-const int MULandDIV_Nums = 2;
 
-const int ADDcode = 0;
-const int ADDIcode = 1;
-const int SUBcode = 2;
-const int MULcode = 3;
-const int DIVcode = 4;
+const int ADD_Nums = 3, MULandDIV_Nums = 2;
+const int ADDcode = 0, ADDIcode = 1, SUBcode = 2, MULcode = 3, DIVcode = 4;
+const int ADDlatency = 2, MULlatency = 6, DIVlatency = 8;
+const int ISSUElatency = 1, WRITEBACKlatency = 1;
+const int REGzero = 10000, RATempty = 10001, QperandAva = 10002, OperandInit = 10003;
 
-const int ADDlatency = 2;
-const int MULlatency = 6;
-const int DIVlatency = 8;
-
-const int ISSUElatency = 1;
-const int WRITEBACKlatency = 1;
-
-int cycleNum = 0;
-int WRnums = 0;
-int InstIssue = 0;
-
-const int REGzero = 10000;
-const int RATempty = 10001;
-const int QperandAva = 10002;
-const int OperandInit = 10003;
+int cycleNum = 0, WRnums = 0, InstIssue = 0;
+int RF[6] = { 0,0,2,4,6,8 };  // Register values
+int buffer[2] = { 50000, 50000 };
 
 bool isChange;
-int RF[6] = { 0,0,2,4,6,8 };
-int buffer[2] = { 50000,50000 };
 vector<Inst> Instructions;
-vector<ReservationStation>ResStations;
-vector<RegisterStatus>RATarr;
-vector<int>Register = { REGzero,0,2,4,6,8 };
+vector<ReservationStation> ResStations;
+vector<RegisterStatus> RATarr;
+vector<int> Register = { REGzero, 0, 2, 4, 6, 8 };
+
 int digits(int num) {
-	int value = 0;
-	while (num > 9)
-		num /= 10, value++;
-	return value;
+    return (num == 0) ? 1 : static_cast<int>(log10(num)) + 1;
 }
+
+// Print Register File (RF) status
 void printRF() {
-	cout << "     _ RF __" << endl;
-	for (int i = 1; i < 6; i++) {
-		cout << "  F" << i << " |";
-		for (int j = 0; j < 3 - digits(RF[i]); j++) cout << " ";
-		cout << RF[i] << " |" << endl;
-	}
-	cout << "     -------\n" << endl;
+    cout << "     _ RF __" << endl;
+    for (int i = 1; i < 6; i++) {
+        cout << "  F" << i << " | ";
+        for (int j = 0; j < 3 - digits(RF[i]); j++) cout << " ";
+        cout << RF[i] << " |" << endl;
+    }
+    cout << "     -------\n" << endl;
 }
+
+// Print Register Alias Table (RAT) status
 void printRAT() {
-	cout << "     _ RAT __" << endl;
-	for (int i = 1; i < 6; i++) {
-		cout << "  F" << i << " |  ";
-		if (RATarr[i].Qi != RATempty)
-			cout << "RS" << RATarr[i].Qi + 1;
-		else
-			cout << "   ";
-		cout << " |" << endl;
-	}
-	cout << "     --------\n" << endl;
+    cout << "     _ RAT __" << endl;
+    for (int i = 1; i < 6; i++) {
+        cout << "  F" << i << " |  ";
+        if (RATarr[i].Qi != RATempty)
+            cout << "RS" << RATarr[i].Qi + 1;
+        else
+            cout << "   ";
+        cout << " |" << endl;
+    }
+    cout << "     --------\n" << endl;
 }
+
+// Print Reservation Station (RS) status
 void printRS() {
-	cout << "    _ RS _________________" << endl;
-	for (int i = 1; i < 4; i++) {
-		cout << "RS" << i << " |    ";
-		if (ResStations[i - 1].busy) {
-			switch (ResStations[i - 1].operation)
-			{
-			case ADDcode:
-				cout << "+ |";
-				break;
-			case ADDIcode:
-				cout << "+ |";
-				break;
-			case SUBcode:
-				cout << "- |";
-				break;
-			default:
-				cout << "  |";
-				break;
-			}
-			if (ResStations[i - 1].unCompleteResultJ != -1)
-				cout << "  RS" << ResStations[i - 1].unCompleteResultJ + 1 << " |";
-			else {
-				for (int j = 0; j < 4 - digits(ResStations[i - 1].Vj); j++) cout << " ";
-				cout << ResStations[i - 1].Vj << " |";
-			}
-			if (ResStations[i - 1].unCompleteResultK != -1)
-				cout << "  RS" << ResStations[i - 1].unCompleteResultK + 1 << " |";
-			else {
-				for (int j = 0; j < 4 - digits(ResStations[i - 1].Vk); j++) cout << " ";
-				cout << ResStations[i - 1].Vk << " |";
-			}
-		}
-		else
-			cout << "  |      |      |";
-		cout << endl;
-	}
-	cout << "    ----------------------\n" << endl;
-	cout << "BUFFER:";
-	if (buffer[0] == 50000)
-		cout << " empty\n" << endl;
-	else {
-		cout << " (RS" << buffer[0] + 1 << ") " << ResStations[buffer[0]].Vj;
-		switch (ResStations[buffer[0]].operation)
-		{
-		case ADDcode:
-			cout << " + ";
-			break;
-		case ADDIcode:
-			cout << " + ";
-			break;
-		case SUBcode:
-			cout << " - ";
-			break;
-		}
-		cout << ResStations[buffer[0]].Vk << endl;
-		cout << endl;
-	}
-	//#############################################################################
-	cout << "    _ RS _________________" << endl;
-	for (int i = 4; i < 6; i++) {
-		cout << "RS" << i << " |    ";
-		if (ResStations[i - 1].busy) {
-			switch (ResStations[i - 1].operation)
-			{
-			case MULcode:
-				cout << "* |";
-				break;
-			case DIVcode:
-				cout << "/ |";
-				break;
-			default:
-				cout << "  |";
-				break;
-			}
-			if (ResStations[i - 1].unCompleteResultJ != -1)
-				cout << "  RS" << ResStations[i - 1].unCompleteResultJ + 1 << " |";
-			else {
-				for (int j = 0; j < 4 - digits(ResStations[i - 1].Vj); j++) cout << " ";
-				cout << ResStations[i - 1].Vj << " |";
-			}
-			if (ResStations[i - 1].unCompleteResultK != -1)
-				cout << "  RS" << ResStations[i - 1].unCompleteResultK + 1 << " |";
-			else {
-				for (int j = 0; j < 4 - digits(ResStations[i - 1].Vk); j++) cout << " ";
-				cout << ResStations[i - 1].Vk << " |";
-			}
-		}
-		else
-			cout << "  |      |      |";
-		cout << endl;
-	}
-	cout << "    ----------------------\n" << endl;
-	cout << "BUFFER:";
-	if (buffer[1] == 50000)
-		cout << " empty\n" << endl;
-	else {
-		cout << " (RS" << buffer[1] + 1 << ") " << ResStations[buffer[1]].Vj;
-		switch (ResStations[buffer[1]].operation)
-		{
-		case MULcode:
-			cout << " * ";
-			break;
-		case DIVcode:
-			cout << " / ";
-			break;
-		}
-		cout << ResStations[buffer[1]].Vk << endl;
-		cout << endl;
-	}
+    cout << "    _ RS _________________" << endl;
+    for (int i = 0; i < ADD_Nums + MULandDIV_Nums; i++) {
+        cout << "RS" << i + 1 << " | ";
+        if (ResStations[i].busy) {
+            // Print operation type
+            cout << (ResStations[i].operation == ADDcode || ResStations[i].operation == ADDIcode ? "+ |" :
+                     ResStations[i].operation == SUBcode ? "- |" : 
+                     ResStations[i].operation == MULcode ? "* |" : "/ |");
+            // Print values or dependency on other RS
+            cout << (ResStations[i].unCompleteResultJ != -1 ? "  RS" + to_string(ResStations[i].unCompleteResultJ + 1) :
+                     to_string(ResStations[i].Vj)) << " |";
+            cout << (ResStations[i].unCompleteResultK != -1 ? "  RS" + to_string(ResStations[i].unCompleteResultK + 1) :
+                     to_string(ResStations[i].Vk)) << " |";
+        } else {
+            cout << "  |      |      |";
+        }
+        cout << endl;
+    }
+    cout << "    ----------------------\n" << endl;
 }
+
+// Issue the instruction if a free RS is available
 void issue() {
-	bool RSfree = false;
-	
-	if (InstIssue >= Instructions.size())
-		return;
-	int order = Instructions[InstIssue].operation;
-	if (order == ADDcode || order == SUBcode || order == ADDIcode) {
-		for (int i = 0; i < ADD_Nums; i++) {
-			if (!ResStations[i].busy) {
-				isChange = true;
-				InstIssue++;
-				RSfree = 1;
-				if (order == ADDcode)
-					ResStations[i].operation = ADDcode;
-				else if (order == SUBcode)
-					ResStations[i].operation = SUBcode;
-				else if (order == ADDIcode)
-					ResStations[i].operation = ADDIcode;
-				order = i;
-				break;
-			}
-		}
-	}
-	else {
-		for (int i = ADD_Nums; i < ADD_Nums + MULandDIV_Nums; i++) {
-			if (!ResStations[i].busy) {
-				isChange = true;
-				InstIssue++;
-				if(order==MULcode)
-					ResStations[i].operation = MULcode;
-				else
-					ResStations[i].operation = DIVcode;
-				RSfree = 1;
-				order = i;
-				break;
-			}
-		}
-	}
-	if (!RSfree)
-		return;
+    if (InstIssue >= Instructions.size()) return;
+    int order = Instructions[InstIssue].operation, assignedRS = -1;
+    bool RSfree = false;
+    
+    // Select appropriate RS based on operation type
+    if (order == ADDcode || order == SUBcode || order == ADDIcode) {
+        for (int i = 0; i < ADD_Nums && !RSfree; i++) {
+            if (!ResStations[i].busy) {
+                RSfree = true;
+                assignedRS = i;
+            }
+        }
+    } else {
+        for (int i = ADD_Nums; i < ADD_Nums + MULandDIV_Nums && !RSfree; i++) {
+            if (!ResStations[i].busy) {
+                RSfree = true;
+                assignedRS = i;
+            }
+        }
+    }
+    if (!RSfree) return;
 
-	if (RATarr[Instructions[InstIssue - 1].rs].Qi == RATempty) {
-		ResStations[order].Vj = Register[Instructions[InstIssue - 1].rs];
-		ResStations[order].Qj = QperandAva;
-		ResStations[order].unCompleteResultJ = -1;
-	}
-	else {
-		ResStations[order].Qk = RATarr[Instructions[InstIssue - 1].rs].Qi;
-		ResStations[order].unCompleteResultJ = RATarr[Instructions[InstIssue - 1].rs].Qi;
-	}
-	if (Instructions[InstIssue-1].operation == ADDIcode) {
-		ResStations[order].Vk = Instructions[InstIssue - 1].constant;
-		ResStations[order].Qk = QperandAva;
-	}
-	else if (RATarr[Instructions[InstIssue - 1].rt].Qi == RATempty) {
-		ResStations[order].Vk = Register[Instructions[InstIssue - 1].rt];
-		ResStations[order].Qk = QperandAva;
-		ResStations[order].unCompleteResultK = -1;
-	}
-	else {
-		ResStations[order].Qk = RATarr[Instructions[InstIssue - 1].rt].Qi;
-		ResStations[order].unCompleteResultK = RATarr[Instructions[InstIssue - 1].rt].Qi;
-	}
-	ResStations[order].busy = true;
-	ResStations[order].IssueLatency = 0;
-	ResStations[order].InstNum = InstIssue-1;
-	RATarr[Instructions[InstIssue - 1].rd].Qi = order;
+    isChange = true;
+    ResStations[assignedRS].operation = order;
+    ResStations[assignedRS].busy = true;
+    ResStations[assignedRS].IssueLatency = 0;
+    ResStations[assignedRS].InstNum = InstIssue;
+
+    // Update dependencies and RAT entries
+    int rs = Instructions[InstIssue].rs, rt = Instructions[InstIssue].rt, rd = Instructions[InstIssue].rd;
+    if (RATarr[rs].Qi == RATempty) {
+        ResStations[assignedRS].Vj = Register[rs];
+        ResStations[assignedRS].Qj = QperandAva;
+    } else {
+        ResStations[assignedRS].Qj = RATarr[rs].Qi;
+    }
+    if (order == ADDIcode) {
+        ResStations[assignedRS].Vk = Instructions[InstIssue].constant;
+        ResStations[assignedRS].Qk = QperandAva;
+    } else if (RATarr[rt].Qi == RATempty) {
+        ResStations[assignedRS].Vk = Register[rt];
+        ResStations[assignedRS].Qk = QperandAva;
+    } else {
+        ResStations[assignedRS].Qk = RATarr[rt].Qi;
+    }
+    RATarr[rd].Qi = assignedRS;
+    InstIssue++;
 }
+
+// Execute instructions that are ready
 void execute() {
-	for (int i = 0; i < ResStations.size(); i++) {
-		if (ResStations[i].busy) {
-			if (ResStations[i].IssueLatency >= ISSUElatency) {
-				if (ResStations[i].Qj == QperandAva && ResStations[i].Qk == QperandAva) {
-					bool exe = true;
-					if (ResStations[i].operation < 3) {
-						if (buffer[0] == 50000)
-							buffer[0] = i;
-						else if (buffer[0] != i)
-							exe = false;
-					}
-					else {
-						if (buffer[1] == 50000)
-							buffer[1] = i;
-						else if (buffer[1] != i)
-							exe = false;
-					}
-					if (exe) {
-						ResStations[i].latency++;
-						switch (ResStations[i].operation) {
-						case ADDcode:
-							if (ResStations[i].latency == ADDlatency) {
-								isChange = true;
-								ResStations[i].result = ResStations[i].Vj + ResStations[i].Vk;
-								ResStations[i].complete = true;
-								ResStations[i].latency = 0;
-								ResStations[i].IssueLatency = 0;
-								buffer[0] = 50000;
-								break;
-							}
-						case ADDIcode:
-							if (ResStations[i].latency == ADDlatency) {
-								isChange = true;
-								ResStations[i].result = ResStations[i].Vj + ResStations[i].Vk;
-								ResStations[i].complete = true;
-								ResStations[i].latency = 0;
-								ResStations[i].IssueLatency = 0;
-								buffer[0] = 50000;
-								break;
-							}
-						case SUBcode:
-							if (ResStations[i].latency == ADDlatency) {
-								isChange = true;
-								ResStations[i].result = ResStations[i].Vj - ResStations[i].Vk;
-								ResStations[i].complete = true;
-								ResStations[i].latency = 0;
-								ResStations[i].IssueLatency = 0;
-								buffer[0] = 50000;
-								break;
-							}
-						case MULcode:
-							if (ResStations[i].latency == MULlatency) {
-								isChange = true;
-								ResStations[i].result = ResStations[i].Vj * ResStations[i].Vk;
-								ResStations[i].complete = true;
-								ResStations[i].latency = 0;
-								ResStations[i].IssueLatency = 0;
-								buffer[1] = 50000;
-								break;
-							}
-						case DIVcode:
-							if (ResStations[i].latency == DIVlatency) {
-								isChange = true;
-								ResStations[i].result = ResStations[i].Vj / ResStations[i].Vk;
-								ResStations[i].complete = true;
-								ResStations[i].latency = 0;
-								ResStations[i].IssueLatency = 0;
-								buffer[1] = 50000;
-								break;
-							}
-						default:
-							break;
-						}
-					}
-				}
-			}
-			else
-				ResStations[i].IssueLatency++;
-		}
-	}
+    for (int i = 0; i < ResStations.size(); i++) {
+        if (ResStations[i].busy && ResStations[i].IssueLatency >= ISSUElatency) {
+            if (ResStations[i].Qj == QperandAva && ResStations[i].Qk == QperandAva) {
+                bool executeCycle = true;
+                // Check execution buffer
+                if (ResStations[i].operation < 3 && buffer[0] == 50000) buffer[0] = i;
+                else if (ResStations[i].operation >= 3 && buffer[1] == 50000) buffer[1] = i;
+                else executeCycle = false;
+
+                // Execute and check latency completion
+                if (executeCycle) {
+                    ResStations[i].latency++;
+                    if ((ResStations[i].operation == ADDcode && ResStations[i].latency == ADDlatency) ||
+                        (ResStations[i].operation == MULcode && ResStations[i].latency == MULlatency) ||
+                        (ResStations[i].operation == DIVcode && ResStations[i].latency == DIVlatency)) {
+                        isChange = true;
+                        ResStations[i].result = (ResStations[i].operation == ADDcode ? ResStations[i].Vj + ResStations[i].Vk :
+                                                 ResStations[i].operation == SUBcode ? ResStations[i].Vj - ResStations[i].Vk :
+                                                 ResStations[i].operation == MULcode ? ResStations[i].Vj * ResStations[i].Vk :
+                                                 ResStations[i].Vj / ResStations[i].Vk);
+                        ResStations[i].complete = true;
+                        buffer[ResStations[i].operation >= 3 ? 1 : 0] = 50000;
+                    }
+                }
+            }
+        } else {
+            ResStations[i].IssueLatency++;
+        }
+    }
 }
+
+// Write results back to register file and update dependent RS
 void writeback() {
-	for (int i = 0; i < ResStations.size(); i++) {
-		if (ResStations[i].complete) {
-			if (ResStations[i].WriteBackLatency == WRITEBACKlatency) {
-				isChange = true;
-				for (int j = 0; j < Register.size(); j++) {
-					if (RATarr[j].Qi == i)
-						Register[j] = ResStations[i].result, RATarr[j].Qi = RATempty;
-				}
-				for (int j = 0; j < ResStations.size(); j++) {
-					if (ResStations[j].Qj == i)
-						ResStations[j].Vj = ResStations[i].result, ResStations[j].Qj = QperandAva;
-					if (ResStations[j].Qk == i)
-						ResStations[j].Vk = ResStations[i].result, ResStations[j].Qk = QperandAva;
-				}
-				ResStations[i].busy = false;
-				ResStations[i].complete = false;
-				ResStations[i].Qj = QperandAva;
-				ResStations[i].Qk = QperandAva;
-				ResStations[i].Vj = 0;
-				ResStations[i].Vk = 0;
-				ResStations[i].latency = 0;
-				WRnums++;
-			}
-			else
-				ResStations[i].WriteBackLatency++;
-		}
-	}
+    for (auto &RS : ResStations) {
+        if (RS.complete && RS.WriteBackLatency == WRITEBACKlatency) {
+            isChange = true;
+            // Update RF and dependent RS
+            for (int i = 0; i < Register.size(); i++) {
+                if (RATarr[i].Qi == &RS - &ResStations[0]) Register[i] = RS.result, RATarr[i].Qi = RATempty;
+            }
+            for (auto &RSdep : ResStations) {
+                if (RSdep.Qj == &RS - &ResStations[0]) RSdep.Vj = RS.result, RSdep.Qj = QperandAva;
+                if (RSdep.Qk == &RS - &ResStations[0]) RSdep.Vk = RS.result, RSdep.Qk = QperandAva;
+            }
+            RS.reset();
+            WRnums++;
+        } else {
+            RS.WriteBackLatency++;
+        }
+    }
 }
+
 int main() {
-	ifstream file;
-	file.open("input.txt");
-	string s;
-	while (getline(file, s)) {
-		stringstream ss(s);
-		string word;
-		vector<string>instruction;
-		while (ss >> word) {
-			if (word[word.size() - 1] == ',') word.pop_back();
-			if (word[0] == 'F') word.erase(word.begin());
-			instruction.push_back(word);
-		}
-		int rd = atoi(instruction[1].c_str()), rs = atoi(instruction[2].c_str()), rt = atoi(instruction[3].c_str());
-		if (instruction[0] == "ADD") {
-			Inst I(rd, rs, rt, 0, ADDcode);
-			Instructions.push_back(I);
-		}
-		else if (instruction[0] == "ADDI") {
-			Inst I(rd, rs, 0, rt, ADDIcode);
-			Instructions.push_back(I);
-		}
-		else if (instruction[0] == "SUB") {
-			Inst I(rd, rs, rt, 0, SUBcode);
-			Instructions.push_back(I);
+    // Load instructions
+    ifstream file("input.txt");
+    string line;
+    while (getline(file, line)) {
+        stringstream ss(line);
+        string op;
+        int rd, rs, rt = 0;
+        ss >> op >> rd >> rs;
+        if (op != "ADDI") ss >> rt;
+        int opcode = (op == "ADD" ? ADDcode : op == "SUB" ? SUBcode : op == "MUL" ? MULcode : DIVcode);
+        Instructions.emplace_back(rd, rs, rt, (op == "ADDI" ? atoi(rt.c_str()) : 0), opcode);
+    }
 
-		}
-		else if (instruction[0] == "MUL") {
-			Inst I(rd, rs, rt, 0, MULcode);
-			Instructions.push_back(I);
+    // Initialize RS and RAT
+    ResStations.resize(ADD_Nums + MULandDIV_Nums);
+    RATarr.resize(6, RegisterStatus(RATempty));
 
-		}
-		else if (instruction[0] == "DIV") {
-			Inst I(rd, rs, rt, 0, DIVcode);
-			Instructions.push_back(I);
-		}
-	}
-	ReservationStation ADD(ADDcode, OperandInit), MUL(MULcode, OperandInit);
-	for (int i = 0; i < 3; i++) ResStations.push_back(ADD);
-	for (int i = 0; i < 2; i++)ResStations.push_back(MUL);
-	RegisterStatus F(RATempty);
-	for (int i = 0; i < 6; i++)RATarr.push_back(F);
-	while (1) {
-		isChange = false;
-		cycleNum++;
-		issue();
-		execute();
-		writeback();
-		if (WRnums == Instructions.size())
-			break;
-		if (isChange) {
-			cout << "Cycle " << cycleNum << ":\n" << endl;
-			printRF();
-			printRAT();
-			printRS();
-			cout << endl;
-		}
-	}
-	for (int i = 0; i < 6; i++)
-		RF[i] = Register[i];
-	cout << "Cycle " << cycleNum << ":\n" << endl;
-	printRF();
-	printRAT();
-	printRS();
+    // Run simulation cycle by cycle
+    while (WRnums < Instructions.size()) {
+        isChange = false;
+        cycleNum++;
+        issue();
+        execute();
+        writeback();
+
+        if (isChange) {
+            cout << "Cycle " << cycleNum << ":\n" << endl;
+            printRF();
+            printRAT();
+            printRS();
+        }
+    }
 }
